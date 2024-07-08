@@ -1,0 +1,208 @@
+#include "snap.h"
+#include "MCAL_DIO_Header.h"
+#include "MGIE_header.h"
+#include "MEXTI_header.h"
+#include "util/delay.h"
+#include "MCAL_TIMER1_Header.h"
+
+#define GET_BIT(REG, BIT_NUM)         ((REG>>BIT_NUM)&1)
+
+
+void ISR_INT0(void);
+void ISR_INT1(void);
+const char *statusToString(snap_status_t status);
+uint8_t ByteBuffer=0;
+uint8_t ReceivedFrameCheck =0;
+uint8_t data[50] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+uint8_t ReceivedFrame [27] = {0};
+snap_frame_t frame;
+    
+int main()
+{
+	Void_SetPinDir(PORTD,PIN2,INPUT); //Rx
+	//Void_SetPinDir(PORTA,PIN1,INPUT); //CS
+
+	Void_SetPinDir(PORTC,PIN1,OUTPUT); //receive Led
+	Void_SetPinDir(PORTC,PIN2,OUTPUT); //received signal check
+	Void_SetPinDir(PORTC,PIN0,OUTPUT); //check led
+	
+	Void_SetPinValue(PORTC,PIN1,HIGH);	//receive Led
+	Void_SetPinValue(PORTC,PIN0,HIGH); //buffer
+	
+	SetEXINTTriggState(INT0,MEXTI_FALLING_EDGE);
+	SetEXINTFunction(INT0,&ISR_INT0);
+	SetGlobalInteruputEnableBit(MGIE_ON);
+
+	//SetEXINTTriggState(INT1,MEXTI_FALLING_EDGE);
+	//SetEXINTFunction(INT1,&ISR_INT1);
+	
+
+    //int ret = snap_init(&frame, data, sizeof(data));
+    
+    snap_fields_t fields;
+
+     fields.header.dab = SNAP_HDB2_DAB_1BYTE_DEST_ADDRESS;
+    fields.header.sab = SNAP_HDB2_SAB_1BYTE_SOURCE_ADDRESS;
+    fields.header.pfb = SNAP_HDB2_PFB_1BYTE_PROTOCOL_FLAGS;
+    fields.header.ack = SNAP_HDB2_ACK_NOT_REQUESTED;
+    fields.header.cmd = SNAP_HDB1_CMD_MODE_DISABLED;
+    fields.header.edm = SNAP_HDB1_EDM_8BIT_CHECKSUM;
+    
+	fields.destAddress = 0xA0;
+    fields.sourceAddress = 0xB0B1;
+    fields.protocolFlags = 0xC0C1C2;
+    fields.data = data;
+    fields.dataSize = 10;
+    fields.paddingAfter = true;
+
+
+   // ret = snap_encapsulate(&frame, &fields);
+   
+   
+ 	while(1)
+ 	{
+		
+		if (ReceivedFrame[0])
+		{	
+			Void_SetPinValue(PORTC,PIN2,HIGH);
+			for(int i=0 ; i<sizeof(ReceivedFrame) ; i++)
+			{
+				for (int j=0 ;j<8 ;j++)
+    		    {
+    		        Void_SetPinValue(PORTC,PIN2,GET_BIT(ReceivedFrame[i],(7-j)));
+					_delay_ms(100);
+    		    }
+			}
+			ReceivedFrameCheck = 0;
+			Void_SetPinValue(PORTC,PIN2,HIGH);
+			
+		}
+		else 
+		{
+			Void_SetPinValue(PORTC,PIN0,HIGH);
+			_delay_ms(50);
+			Void_SetPinValue(PORTC,PIN0,LOW);
+			_delay_ms(50);
+		}
+		//switch (ReceivedFrame[0])
+		// {
+		// 	case 0:
+
+		// 	break;
+
+		// 	case 84:
+		// 		Void_SetPinValue(PORTC,PIN0,HIGH);
+		// 		_delay_ms(50);
+		// 		Void_SetPinValue(PORTC,PIN0,LOW);
+		// 		_delay_ms(50);
+	
+		// 	break;
+
+		// 	case 42:
+		// 		Void_SetPinValue(PORTC,PIN0,HIGH);
+		// 	break;
+
+
+
+		// default:
+		// 	Void_SetPinValue(PORTC,PIN0,LOW);
+		// 	break;
+		// }
+	
+	
+
+	}
+
+
+ return 0;
+}
+
+
+void ISR_INT0 (void)
+{
+	SetGlobalInteruputEnableBit(MGIE_OFF);
+	
+	// Void_Timer1CLK (TIMER1_CLK_OFF);
+	// TIMER1->TCNT1=0;
+	// Void_Timer1CLK (TIMER1_CLK_DIV1);
+
+	
+	
+	Void_SetPinValue(PORTC,PIN1,LOW); //receive Led
+	
+	for(int i = 0; i < sizeof(ReceivedFrame); i++)
+	{
+		for (int j=0 ; j<8 ;j++)
+		{
+			switch (U8_ReadPinValue(PORTD,PIN2))
+			{
+				case 0:
+					CLEAR_BIT(ByteBuffer,(7-j));
+				break;
+				case 1:
+					SET_BIT(ByteBuffer,(7-j));
+				break;
+				default:
+				break;
+			}
+			// while (10000 >= TIMER1->TCNT1){}
+			// Void_Timer1CLK (TIMER1_CLK_OFF);
+			// TIMER1->TCNT1=0;
+			// Void_Timer1CLK (TIMER1_CLK_DIV1);
+			_delay_ms(100);
+		}
+		ReceivedFrame[i] = ByteBuffer;
+	}
+	//ReceivedFrameCheck =1;
+	//_delay_ms(50);
+	Void_SetPinValue(PORTC,PIN1,HIGH); //receive Led
+
+	////////////////////////////////////////////////////////////////////
+	
+	
+	
+
+
+	////////////////////////////////////////////////////////////////////
+	// for(int i=0;i<frame.size;i++)
+	// {
+	// 	if (ReceivedFrame[i]!=frame.buffer[i]/2)
+	// 	{
+	// 		for (int j = 0; j <= i; j++)
+	// 		{
+	// 			Void_SetPinValue(PORTC,PIN0,HIGH);
+	// 			_delay_ms(20);
+	// 			Void_SetPinValue(PORTC,PIN0,LOW);
+	// 			_delay_ms(20);
+	// 		}
+	// 		_delay_ms(200);
+	// 	}
+	// }
+	////////////////////////////////////////////////////////////////////
+
+
+
+	SetGlobalInteruputEnableBit(MGIE_ON);
+}
+
+void ISR_INT1(void)
+{
+	
+
+	// 	Void_SetPinValue(PORTC,PIN1,HIGH); //receive Led
+	
+
+}
+
+const char *statusToString(const snap_status_t status)
+{
+	switch(status)
+	{
+		case SNAP_STATUS_IDLE:           return "IDLE";
+		case SNAP_STATUS_INCOMPLETE:     return "INCOMPLETE";
+		case SNAP_STATUS_VALID:          return "VALID";
+		case SNAP_STATUS_ERROR_HASH:     return "ERROR_HASH";
+		case SNAP_STATUS_ERROR_OVERFLOW: return "ERROR_OVERFLOW";
+		default:                         return "UNKNOWN";
+	}
+}

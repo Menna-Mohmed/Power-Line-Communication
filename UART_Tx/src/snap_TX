@@ -1,0 +1,119 @@
+#include "snap.h"
+#include "MCAL_DIO_Header.h"
+#include "util/delay.h"
+#include "MGIE_header.h"
+#include "MEXTI_header.h"
+#include "MCAL_TIMER1_Header.h"
+
+#define GET_BIT(REG, BIT_NUM)         ((REG>>BIT_NUM)&1)
+
+
+const char *statusToString(snap_status_t status);
+void ISR_INT1(void);
+int buttonControl =0;
+uint8_t data[30] = {1,2,3,4,5,6,7,8,9,10};
+snap_frame_t DataFrame;
+snap_frame_t BufferFrame;
+int main()
+{
+	Void_SetPinDir(PORTD,PIN3,INPUT); //// button
+	Void_SetPinDir(PORTD,PIN2,OUTPUT);// Tx
+	Void_SetPinDir(PORTD,PIN4,OUTPUT);// Tx
+	
+	Void_SetPinValue(PORTD,PIN2,HIGH); // Tx
+	Void_SetPinValue(PORTD,PIN4,HIGH); // Tx
+	
+	SetGlobalInteruputEnableBit(MGIE_ON);
+	SetEXINTTriggState(INT1,MEXTI_FALLING_EDGE);
+	SetEXINTFunction(INT1,&ISR_INT1);
+
+
+
+    
+    int ret = snap_init(&DataFrame, data, sizeof(data));
+    ret = snap_init(&BufferFrame, data, sizeof(data));
+    
+    snap_fields_t fields;
+
+    fields.header.dab = SNAP_HDB2_DAB_1BYTE_DEST_ADDRESS;
+    fields.header.sab = SNAP_HDB2_SAB_1BYTE_SOURCE_ADDRESS;
+    fields.header.pfb = SNAP_HDB2_PFB_1BYTE_PROTOCOL_FLAGS;
+    fields.header.ack = SNAP_HDB2_ACK_NOT_REQUESTED;
+    fields.header.cmd = SNAP_HDB1_CMD_MODE_DISABLED;
+    fields.header.edm = SNAP_HDB1_EDM_8BIT_CHECKSUM;
+    
+	fields.destAddress = 0xA0;
+    fields.sourceAddress = 0xB0B1;
+    fields.protocolFlags = 0xC0C1C2;
+    fields.data = data;
+    fields.dataSize = 10;
+    fields.paddingAfter = true;
+
+
+    ret = snap_encapsulate(&DataFrame, &fields);
+    ret = snap_encapsulate(&BufferFrame, &fields);
+	BufferFrame=DataFrame;
+	Void_Timer1Mode(TIMER1_NORMAL_MODE);
+
+	while(1)
+   	{
+    
+   	}
+
+ return 0;
+}
+
+void ISR_INT1(void)
+{
+	Void_Timer1CLK(TIMER1_CLK_OFF);
+	TIMER1->TCNT1=0;
+	Void_Timer1CLK(TIMER1_CLK_DIV1);
+	for(int i=0 ; i<DataFrame.size ; i++)
+	{
+		for (int j=0 ; j<8 ;j++)
+        {
+			
+			
+			switch (GET_BIT(DataFrame.buffer[i],(7-j)))
+			{
+			case 0:
+				Void_SetPinValue(PORTD,PIN2,LOW);
+			break;
+			
+			case 1:
+				Void_SetPinValue(PORTD,PIN2,HIGH);
+			break;
+			
+			default:
+				break;
+			}
+			while(10000 >= TIMER1->TCNT1)
+			{
+
+			}
+			Void_Timer1CLK(TIMER1_CLK_OFF);
+			TIMER1->TCNT1=0;
+			Void_Timer1CLK(TIMER1_CLK_DIV1);
+
+        }
+	}
+	Void_SetPinValue(PORTD,PIN2,HIGH);//Tx
+	//_delay_us(50);
+	//SetGlobalInteruputEnableBit(MGIE_ON);
+	
+}
+
+
+
+const char *statusToString(const snap_status_t status)
+{
+	switch(status)
+	{
+		case SNAP_STATUS_IDLE:           return "IDLE";
+		case SNAP_STATUS_INCOMPLETE:     return "INCOMPLETE";
+		case SNAP_STATUS_VALID:          return "VALID";
+		case SNAP_STATUS_ERROR_HASH:     return "ERROR_HASH";
+		case SNAP_STATUS_ERROR_OVERFLOW: return "ERROR_OVERFLOW";
+		default:                         return "UNKNOWN";
+	}
+}
